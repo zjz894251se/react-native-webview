@@ -1253,53 +1253,62 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
         }
         this.injectedJavaScriptOnLoadHtmlOnlyCount++;
       }
-      Log.d("WalletRn","load page "+request.getUrl().toString());
-      // 重新构造请求，并获取response
-      String method = request.getMethod().toLowerCase();
-      // 页面一般也都是get
-      if (method.equalsIgnoreCase("GET")){
-        Request.Builder req = new Request.Builder()
-                              .get()
-                              .url(request.getUrl().toString());
-        Map<String,String> headers = request.getRequestHeaders();
-        Set<String> keys = headers.keySet();
-        for (String key : keys) {
-          if (headers.get(key) != null){
-            req.addHeader(key, headers.get(key));
-          }
+      RNCWebView rncWebView = (RNCWebView)view;
+      rncWebView.post(new Runnable() {
+        @Override
+        public void run() {
+          rncWebView.evaluateJavascriptWithFallback(injectedJavaScriptOnLoadHtml);
         }
-        try {
-          Response res = this.httpClient.newCall(req.build()).execute();
-          byte[] body = null;
-          if (res.isSuccessful()){
-            String contentType = getContentTypeHeader(res);
-            if (contentType!=null && contentType.toLowerCase().contains("text/html")){
-              body = injectJS(res.body().string()).getBytes();
-            }else{
-              body = res.body().bytes();
-            }
-            if (body.length<1){
-              return super.shouldInterceptRequest(view, request);
-            }
-            String charset = getCharset(contentType);
-            String mime = getMimeType(contentType);
-            Response prior = res.priorResponse();
-            Map<String, String> responseHeaders = new HashMap<String,String>();
-            Set<String> resKeys = res.headers().names();
-            for (String key : resKeys) {
-              responseHeaders.put(key,res.header(key));
-            }
-            WebResourceResponse webResponse =new WebResourceResponse(mime,charset,new ByteArrayInputStream(body));
-            webResponse.setResponseHeaders(responseHeaders);
-            webResponse.setStatusCodeAndReasonPhrase(res.code(),"success");
-            return webResponse;
-          }
-        } catch (IOException e) {
-          Log.e("WalletRn",e.getMessage());
-          e.printStackTrace();
-        }
-      }
-      return super.shouldInterceptRequest(view, request);
+      });
+      super.shouldInterceptRequest(view,request);
+      return null;
+//      Log.d("WalletRn","load page "+request.getUrl().toString());
+//      // 重新构造请求，并获取response
+//      String method = request.getMethod().toLowerCase();
+//      // 页面一般也都是get
+//      if (method.equalsIgnoreCase("GET")){
+//        Request.Builder req = new Request.Builder()
+//                              .get()
+//                              .url(request.getUrl().toString());
+//        Map<String,String> headers = request.getRequestHeaders();
+//        Set<String> keys = headers.keySet();
+//        for (String key : keys) {
+//          if (headers.get(key) != null){
+//            req.addHeader(key, headers.get(key));
+//          }
+//        }
+//        try {
+//          Response res = this.httpClient.newCall(req.build()).execute();
+//          byte[] body = null;
+//          if (res.isSuccessful()){
+//            String contentType = getContentTypeHeader(res);
+//            if (contentType!=null && contentType.toLowerCase().contains("text/html")){
+//              body = injectJS(res.body().string()).getBytes();
+//            }else{
+//              body = res.body().bytes();
+//            }
+//            if (body.length<1){
+//              return super.shouldInterceptRequest(view, request);
+//            }
+//            String charset = getCharset(contentType);
+//            String mime = getMimeType(contentType);
+//            Response prior = res.priorResponse();
+//            Map<String, String> responseHeaders = new HashMap<String,String>();
+//            Set<String> resKeys = res.headers().names();
+//            for (String key : resKeys) {
+//              responseHeaders.put(key,res.header(key));
+//            }
+//            WebResourceResponse webResponse =new WebResourceResponse(mime,charset,new ByteArrayInputStream(body));
+//            webResponse.setResponseHeaders(responseHeaders);
+//            webResponse.setStatusCodeAndReasonPhrase(res.code(),"success");
+//            return webResponse;
+//          }
+//        } catch (IOException e) {
+//          Log.e("WalletRn",e.getMessage());
+//          e.printStackTrace();
+//        }
+//      }
+//      return super.shouldInterceptRequest(view, request);
     }
 
     private String getMimeType(String contentType) {
