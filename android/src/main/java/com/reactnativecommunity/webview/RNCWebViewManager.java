@@ -467,15 +467,9 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   }
   // ++++++++++++++++++++++++++++ zjz
   // 嵌入页面内容
-  @ReactProp(name = "injectedJavaScriptOnLoadHtml")
-  public void setInjectedJavaScriptOnLoadHtml(WebView view, @Nullable String injectedJavaScript) {
-    ((RNCWebView) view).setInjectedJavaScriptOnLoadHtml(injectedJavaScript);
-  }
-  // ++++++++++++++++++++++++++++ zjz
-  // 是否只有首次请求才嵌入，提高速度
-  @ReactProp(name = "injectedJavaScriptOnLoadHtmlOnlyFirst")
-  public void setInjectedJavaScriptOnLoadHtmlOnlyFirst(WebView view, boolean isFirst) {
-    ((RNCWebView) view).setInjectedJavaScriptOnLoadHtmlOnlyFirst(isFirst);
+  @ReactProp(name = "injectedJavaScriptOnLoadStart")
+  public void setInjectedJavaScriptOnLoadStart(WebView view, @Nullable String injectedJavaScript) {
+    ((RNCWebView) view).setInjectedJavaScriptOnLoadStart(injectedJavaScript);
   }
   // ++++++++++++++++++++++++++++ zjz
   // 是否打开别的应用
@@ -936,7 +930,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     public void onPageStarted(WebView webView, String url, Bitmap favicon) {
       super.onPageStarted(webView, url, favicon);
       mLastLoadFailed = false;
-
+      isInjectedJavaScriptOnLoadStart=false;
       RNCWebView reactWebView = (RNCWebView) webView;
       reactWebView.callInjectedJavaScriptBeforeContentLoaded();
 
@@ -1214,25 +1208,17 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
 
     // ++++++++++++++++++++++++++++ zjz
     // 页面嵌入内容
-    protected String injectedJavaScriptOnLoadHtml;
+    protected String injectedJavaScriptOnLoadStart;
 
-    public void setInjectedJavaScriptOnLoadHtml(String js){
-      this.injectedJavaScriptOnLoadHtml = js;
+    public void setInjectedJavaScriptOnLoadStart(String js){
+      this.injectedJavaScriptOnLoadStart = js;
     }
-
+    // 是否已经注入过了
+    protected boolean isInjectedJavaScriptOnLoadStart;
     // 是否打开chemeUrl
     protected boolean isOpenSchemeUrl;
     public void setOpenSchemeUrlEnabled(boolean isOpen){
       this.isOpenSchemeUrl = isOpen;
-    }
-
-    // ++++++++++++++++++++++++++++ zjz
-    // 是否只有首次嵌入
-    protected boolean injectedJavaScriptOnLoadHtmlOnlyFirst;
-    protected int injectedJavaScriptOnLoadHtmlOnlyCount;
-    public void setInjectedJavaScriptOnLoadHtmlOnlyFirst(boolean isFirst){
-      this.injectedJavaScriptOnLoadHtmlOnlyFirst = isFirst;
-      this.injectedJavaScriptOnLoadHtmlOnlyCount = 0;
     }
     // ++++++++++++++++++++++++++++ zjz
     // 同步锁
@@ -1242,160 +1228,26 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
       // 不用注入页面的话无所谓了
-      if (injectedJavaScriptOnLoadHtml==null){
+      if (TextUtils.isEmpty(injectedJavaScriptOnLoadStart)){
         return super.shouldInterceptRequest(view, request);
       }
       // 判断如果只首次加载的话，就只有在计数为0的时候才执行
       // 同步
       synchronized (interceptLock) {
-        if (injectedJavaScriptOnLoadHtmlOnlyFirst && injectedJavaScriptOnLoadHtmlOnlyCount > 0) {
+        if (isInjectedJavaScriptOnLoadStart) {
           return super.shouldInterceptRequest(view, request);
         }
-        this.injectedJavaScriptOnLoadHtmlOnlyCount++;
+        this.isInjectedJavaScriptOnLoadStart = true;
       }
       RNCWebView rncWebView = (RNCWebView)view;
       rncWebView.post(new Runnable() {
         @Override
         public void run() {
-          rncWebView.evaluateJavascriptWithFallback(injectedJavaScriptOnLoadHtml);
+          rncWebView.evaluateJavascriptWithFallback(injectedJavaScriptOnLoadStart);
         }
       });
       super.shouldInterceptRequest(view,request);
       return null;
-//      Log.d("WalletRn","load page "+request.getUrl().toString());
-//      // 重新构造请求，并获取response
-//      String method = request.getMethod().toLowerCase();
-//      // 页面一般也都是get
-//      if (method.equalsIgnoreCase("GET")){
-//        Request.Builder req = new Request.Builder()
-//                              .get()
-//                              .url(request.getUrl().toString());
-//        Map<String,String> headers = request.getRequestHeaders();
-//        Set<String> keys = headers.keySet();
-//        for (String key : keys) {
-//          if (headers.get(key) != null){
-//            req.addHeader(key, headers.get(key));
-//          }
-//        }
-//        try {
-//          Response res = this.httpClient.newCall(req.build()).execute();
-//          byte[] body = null;
-//          if (res.isSuccessful()){
-//            String contentType = getContentTypeHeader(res);
-//            if (contentType!=null && contentType.toLowerCase().contains("text/html")){
-//              body = injectJS(res.body().string()).getBytes();
-//            }else{
-//              body = res.body().bytes();
-//            }
-//            if (body.length<1){
-//              return super.shouldInterceptRequest(view, request);
-//            }
-//            String charset = getCharset(contentType);
-//            String mime = getMimeType(contentType);
-//            Response prior = res.priorResponse();
-//            Map<String, String> responseHeaders = new HashMap<String,String>();
-//            Set<String> resKeys = res.headers().names();
-//            for (String key : resKeys) {
-//              responseHeaders.put(key,res.header(key));
-//            }
-//            WebResourceResponse webResponse =new WebResourceResponse(mime,charset,new ByteArrayInputStream(body));
-//            webResponse.setResponseHeaders(responseHeaders);
-//            webResponse.setStatusCodeAndReasonPhrase(res.code(),"success");
-//            return webResponse;
-//          }
-//        } catch (IOException e) {
-//          Log.e("WalletRn",e.getMessage());
-//          e.printStackTrace();
-//        }
-//      }
-//      return super.shouldInterceptRequest(view, request);
-    }
-
-    private String getMimeType(String contentType) {
-      if (!TextUtils.isEmpty(contentType)){
-        Matcher regexResult = Pattern.compile("^.*(?=;)").matcher(contentType);
-        if (regexResult.find()) {
-          return regexResult.group();
-        }
-      }
-      return "text/html";
-    }
-
-    String injectJS(String html) {
-      if (TextUtils.isEmpty(html)) {
-        return html;
-      }
-      int position = getInjectionPosition(html);
-      if (position > 0) {
-        String beforeTag = html.substring(0, position);
-        String afterTab = html.substring(position);
-        return beforeTag + "<script>" + this.injectedJavaScriptOnLoadHtml+ "</script>" + afterTab;
-      }
-      return html;
-    }
-
-    /**
-     * 匹配html标签
-     * @param body
-     * @param tag
-     * @return
-     */
-    private int matchTagIndex(String body,String tag){
-      String headTagReg = "<\\s*"+tag+".*?[^>]*?>";
-      Pattern headP = Pattern.compile(headTagReg);
-      Matcher headM = headP.matcher(body);
-      if (headM.find()){
-        return headM.end();
-      }
-      return -1;
-    }
-
-    private int getInjectionPosition(String body) {
-      if (TextUtils.isEmpty(body)){
-        return 0;
-      }
-      body = body.toLowerCase();
-      int index = matchTagIndex(body,"head");
-      if (index<0){
-        index = matchTagIndex(body,"body");
-      }
-      if (index<0){
-        index = matchTagIndex(body,"html");
-      }
-      if (index<0){
-        return 0;
-      }
-      return index;
-    }
-
-    private String getCharset(String contentType) {
-      if (!TextUtils.isEmpty(contentType)) {
-        Matcher regexResult = Pattern.compile("charset=([a-zA-Z0-9-]+)").matcher(contentType);
-        if (regexResult.find()) {
-          if (regexResult.groupCount() >= 2) {
-            return regexResult.group(1);
-          }
-        }
-      }
-      return "utf-8";
-    }
-    @Nullable
-    private String getContentTypeHeader(Response response) {
-      Headers headers = response.headers();
-      String contentType;
-      if (TextUtils.isEmpty(headers.get("Content-Type"))) {
-        if (TextUtils.isEmpty(headers.get("content-Type"))) {
-          contentType = "text/data; charset=utf-8";
-        } else {
-          contentType = headers.get("content-Type");
-        }
-      } else {
-        contentType = headers.get("Content-Type");
-      }
-      if (contentType != null) {
-        contentType = contentType.trim();
-      }
-      return contentType;
     }
   }
 
@@ -1707,12 +1559,6 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     String injectedJS;
     protected @Nullable
     String injectedJSBeforeContentLoaded;
-    // ++++++++++++++++++++++++++++ zjz
-    protected @Nullable
-    String injectedJSOnHtmlLoad;
-    // ++++++++++++++++++++++++++++ zjz
-    // 是否只有首次才嵌入页面
-    boolean injectedJavaScriptOnLoadHtmlOnlyFirst;
     /**
      * android.webkit.WebChromeClient fundamentally does not support JS injection into frames other
      * than the main frame, so these two properties are mostly here just for parity with iOS & macOS.
@@ -1834,30 +1680,11 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
 
     // ++++++++++++++++++++++++++++ zjz
     // 设置嵌入js
-    public void setInjectedJavaScriptOnLoadHtml(@Nullable String js){
-      injectedJSOnHtmlLoad = js;
+    public void setInjectedJavaScriptOnLoadStart(@Nullable String js){
       if (this.mRNCWebViewClient!=null){
-        this.mRNCWebViewClient.setInjectedJavaScriptOnLoadHtml(js);
+        this.mRNCWebViewClient.setInjectedJavaScriptOnLoadStart(js);
       }
     }
-    // ++++++++++++++++++++++++++++ zjz
-    // 只有首次嵌入
-    public void setInjectedJavaScriptOnLoadHtmlOnlyFirst(boolean isFirst){
-      injectedJavaScriptOnLoadHtmlOnlyFirst = isFirst;
-      if (this.mRNCWebViewClient!=null){
-          this.mRNCWebViewClient.setInjectedJavaScriptOnLoadHtmlOnlyFirst(isFirst);
-      }
-    }
-    // ++++++++++++++++++++++++++++ zjz
-    // reload的时候重新复写状态
-    @Override
-    public void reload() {
-      if (this.mRNCWebViewClient!=null){
-        this.mRNCWebViewClient.setInjectedJavaScriptOnLoadHtmlOnlyFirst(this.injectedJavaScriptOnLoadHtmlOnlyFirst);
-      }
-      super.reload();
-    }
-
     // ++++++++++++++++++++++++++++ zjz
     // 是否可以打开urlScheme
     public void setOpenSchemeUrlEnabled(boolean isOpen){
